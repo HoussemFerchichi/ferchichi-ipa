@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trailer</title>
+<!--
+  A YouTube embed with an origin YouTube will accept.
+
+  The app it is used by is served from `capacitor://localhost`. That scheme
+  sends no HTTP referrer, and a YouTube embed answers a missing referrer with
+  "Video player configuration error - Error 153" and refuses to play anything.
+  It is a property of the scheme, not a parameter that can be added, so no
+  amount of tuning the embed inside the app will ever work.
+
+  This page is the origin. The app frames it, it frames YouTube, and the
+  referrer YouTube sees is this page's https address rather than the app's.
+  The alternative was to serve the whole app over https, which would have
+  changed its origin and taken every profile, watch position and saved title
+  with it - browser storage is keyed by origin and does not move.
+
+  It reports back to whatever framed it: `playing` once the picture is
+  actually running, `failed` if the embed is refused or nothing starts, so the
+  app can keep its still artwork rather than showing a black rectangle.
+-->
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    background: #000; overflow: hidden;
+  }
+  /*
+    A 16:9 video filling a portrait phone.
+
+    `object-fit: cover` is not available to an iframe, so the frame is sized
+    to overflow on whichever axis is short and centred - the same result,
+    arrived at with arithmetic instead. Recomputed on resize because the app
+    rotates.
+  */
+  #frame {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    border: 0; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="frame-host"></div>
+<script>
+(function () {
+  var params = new URLSearchParams(location.search);
+  var id = (params.get('v') || '').replace(/[^A-Za-z0-9_-]/g, '');
+  var muted = params.get('muted') !== '0';
+
+  function tell(kind, detail) {
+    try { parent.postMessage({ source: 'ferchichi-trailer', kind: kind, detail: detail || null }, '*'); }
+    catch (e) { /* framed by something that will not listen; nothing to do */ }
+  }
+
+  if (!id) { tell('failed', 'no video id'); return; }
+
+  var player = null;
+  var started = false;
+
+  /* Cover the viewport with a 16:9 frame, whichever way up we are. */
+  function fit() {
+    var el = document.getElementById('frame');
+    if (!el) return;
+    var w = window.innerWidth, h = window.innerHeight;
+    var byWidth = { w: w, h: w * 9 / 16 };
+    var byHeight = { w: h * 16 / 9, h: h };
+    var box = byWidth.h >= h ? byWidth : byHeight;
+    el.style.width = Math.ceil(box.w) + 'px';
+    el.style.height = Math.ceil(box.h) + 'px';
+  }
+  window.addEventListener('resize', fit);
+  window.addEventListener('orientationchange', function () { setTimeout(fit, 150); });
+
+  /* The app asks for sound with a message rather than a reload. */
+  window.addEventListener('message', function (e) {
+    var data = e.data;
+    if (!data || data.source !== 'ferchichi-app' || !player) return;
+    try {
+      if (data.kind === 'mute') player.mute();
+      else if (data.kind === 'unmute') { player.unMute(); player.setVolume(100); }
+      else if (data.kind === 'pause') player.pauseVideo();
+      else if (data.kind === 'play') player.playVideo();
+    } catch (err) { /* the player is gone; the app will notice on its own */ }
+  });
+
+  window.onYouTubeIframeAPIReady = function () {
+    var host = document.createElement('div');
+    host.id = 'frame';
+    document.getElementById('frame-host').appendChild(host);
+    fit();
+
+    player = new YT.Player('frame', {
+      videoId: id,
+      playerVars: {
+        autoplay: 1,
+        mute: muted ? 1 : 0,
+        controls: 0,
+        disablekb: 1,
+        fs: 0,
+        modestbranding: 1,
+        playsinline: 1,
+        rel: 0,
+        iv_load_policy: 3,
+        loop: 1,
+        playlist: id,
+        origin: location.origin
+      },
+      events: {
+        onReady: function (e) {
+          fit();
+          // Autoplay is only granted to a muted player; asking anyway is
+          // harmless and is what starts it on the platforms that do allow it.
+          try { if (muted) e.target.mute(); e.target.playVideo(); } catch (err) {}
+        },
+        onStateChange: function (e) {
+          if (e.data === YT.PlayerState.PLAYING && !started) {
+            started = true;
+            tell('playing');
+          }
+          if (e.data === YT.PlayerState.ENDED) tell('ended');
+        },
+        onError: function (e) { tell('failed', 'youtube ' + e.data); }
+      }
+    });
+  };
+
+  /*
+    Nothing playing after ten seconds is a failure even if YouTube never said
+    so - a silent embed and a black rectangle look identical to the viewer,
+    and the app has a perfectly good still image to fall back to.
+  */
+  setTimeout(function () { if (!started) tell('failed', 'timeout'); }, 10000);
+
+  var api = document.createElement('script');
+  api.src = 'https://www.youtube.com/iframe_api';
+  api.onerror = function () { tell('failed', 'api blocked'); };
+  document.head.appendChild(api);
+})();
+</script>
+</body>
+</html>
