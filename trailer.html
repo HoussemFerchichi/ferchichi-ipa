@@ -67,7 +67,16 @@
     a player — fitted, touchable, filling the screen — with no YouTube
     interface on it at all. The app draws its own.
   */
-  var player = params.get('player') === '1' || controls;
+  /*
+    Named `asPlayer`, not `player`.
+
+    There is already a `player` in this scope holding the YouTube instance,
+    and `var` does not mind being declared twice: the second declaration
+    quietly reset this flag to null before the options were built, so player
+    mode set the body class and then looped forever like a backdrop. A
+    one-word collision, and nothing about it looked wrong.
+  */
+  var asPlayer = params.get('player') === '1' || controls;
 
   function tell(kind, detail) {
     try { parent.postMessage({ source: 'ferchichi-trailer', kind: kind, detail: detail || null }, '*'); }
@@ -82,7 +91,7 @@
     and have completely different causes, one being the network and the other
     being the phone's autoplay policy.
   */
-  if (player) document.body.className = 'is-player';
+  if (asPlayer) document.body.className = 'is-player';
 
   tell('reached');
 
@@ -106,7 +115,7 @@
       video someone opened on purpose must not be cropped, so it takes the
       smaller of the two fits and letterboxes instead.
     */
-    var box = player
+    var box = asPlayer
       ? (byWidth.h <= h ? byWidth : byHeight)
       : (byWidth.h >= h ? byWidth : byHeight);
     el.style.width = Math.ceil(box.w) + 'px';
@@ -153,8 +162,8 @@
         rel: 0,
         iv_load_policy: 3,
         // A backdrop loops; a trailer someone opened should end when it ends.
-        loop: player ? 0 : 1,
-        playlist: player ? undefined : id,
+        loop: asPlayer ? 0 : 1,
+        playlist: asPlayer ? undefined : id,
         origin: location.origin
       },
       events: {
