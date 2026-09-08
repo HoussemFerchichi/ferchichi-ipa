@@ -41,6 +41,9 @@
     transform: translate(-50%, -50%);
     border: 0; pointer-events: none;
   }
+  /* Watched rather than glanced at: the frame is fitted inside the viewport
+     instead of overflowing it, and it takes touches. */
+  body.is-player #frame { pointer-events: auto; }
 </style>
 </head>
 <body>
@@ -50,6 +53,14 @@
   var params = new URLSearchParams(location.search);
   var id = (params.get('v') || '').replace(/[^A-Za-z0-9_-]/g, '');
   var muted = params.get('muted') !== '0';
+  /*
+    Controls, for when this is the thing being watched rather than a backdrop.
+
+    The same page serves both: behind a title page it is scenery and must have
+    no interface at all, and opened deliberately it is a video someone wants to
+    scrub, mute and make fullscreen. One parameter is the whole difference.
+  */
+  var controls = params.get('controls') === '1';
 
   function tell(kind, detail) {
     try { parent.postMessage({ source: 'ferchichi-trailer', kind: kind, detail: detail || null }, '*'); }
@@ -64,6 +75,8 @@
     and have completely different causes, one being the network and the other
     being the phone's autoplay policy.
   */
+  if (controls) document.body.className = 'is-player';
+
   tell('reached');
 
   if (!id) { tell('failed', 'no video id'); return; }
@@ -79,7 +92,16 @@
     var w = window.innerWidth, h = window.innerHeight;
     var byWidth = { w: w, h: w * 9 / 16 };
     var byHeight = { w: h * 16 / 9, h: h };
-    var box = byWidth.h >= h ? byWidth : byHeight;
+    /*
+      Cover for a backdrop, contain for a player.
+
+      A backdrop has to fill the screen and may lose its edges doing it. A
+      video someone opened on purpose must not be cropped, so it takes the
+      smaller of the two fits and letterboxes instead.
+    */
+    var box = controls
+      ? (byWidth.h <= h ? byWidth : byHeight)
+      : (byWidth.h >= h ? byWidth : byHeight);
     el.style.width = Math.ceil(box.w) + 'px';
     el.style.height = Math.ceil(box.h) + 'px';
   }
@@ -109,15 +131,16 @@
       playerVars: {
         autoplay: 1,
         mute: muted ? 1 : 0,
-        controls: 0,
-        disablekb: 1,
-        fs: 0,
+        controls: controls ? 1 : 0,
+        disablekb: controls ? 0 : 1,
+        fs: controls ? 1 : 0,
         modestbranding: 1,
         playsinline: 1,
         rel: 0,
         iv_load_policy: 3,
-        loop: 1,
-        playlist: id,
+        // A backdrop loops; a trailer someone opened should end when it ends.
+        loop: controls ? 0 : 1,
+        playlist: controls ? undefined : id,
         origin: location.origin
       },
       events: {
