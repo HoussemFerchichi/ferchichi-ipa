@@ -56,6 +56,16 @@
     catch (e) { /* framed by something that will not listen; nothing to do */ }
   }
 
+  /*
+    Say we exist, before anything else can go wrong.
+
+    This is what separates "the page never loaded" from "the page loaded and
+    the video would not start" - two failures that look identical from the app
+    and have completely different causes, one being the network and the other
+    being the phone's autoplay policy.
+  */
+  tell('reached');
+
   if (!id) { tell('failed', 'no video id'); return; }
 
   var player = null;
@@ -149,10 +159,13 @@
     so - a silent embed and a black rectangle look identical to the viewer,
     and the app has a perfectly good still image to fall back to.
   */
-  setTimeout(function () { if (!started) tell('failed', 'timeout'); }, 10000);
+  setTimeout(function () {
+    if (!started) tell('failed', player ? 'would not start' : 'player never built');
+  }, 15000);
 
   var api = document.createElement('script');
   api.src = 'https://www.youtube.com/iframe_api';
+  api.onload = function () { tell('api'); };
   api.onerror = function () { tell('failed', 'api blocked'); };
   document.head.appendChild(api);
 })();
