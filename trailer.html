@@ -60,6 +60,7 @@
 
   var player = null;
   var started = false;
+  var nudges = 0;
 
   /* Cover the viewport with a 16:9 frame, whichever way up we are. */
   function fit() {
@@ -120,6 +121,21 @@
           if (e.data === YT.PlayerState.PLAYING && !started) {
             started = true;
             tell('playing');
+          }
+          /*
+            Buffered and then stopped, without ever having played, is what an
+            autoplay refusal looks like: the video is fine, the browser simply
+            would not start it unasked. Asking again a moment later is often
+            enough, and twice is where it stops being worth trying - a third
+            attempt against a browser that means it is just noise.
+          */
+          if (!started && (e.data === YT.PlayerState.PAUSED
+                        || e.data === YT.PlayerState.CUED) && nudges < 2) {
+            nudges += 1;
+            setTimeout(function () {
+              if (started || !player) return;
+              try { player.mute(); player.playVideo(); } catch (err) {}
+            }, 350);
           }
           if (e.data === YT.PlayerState.ENDED) tell('ended');
         },
