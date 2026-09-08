@@ -61,6 +61,13 @@
     scrub, mute and make fullscreen. One parameter is the whole difference.
   */
   var controls = params.get('controls') === '1';
+  /*
+    Player mode is about the frame, controls are about YouTube's interface,
+    and they are separate on purpose: the trailer opened from a title page is
+    a player — fitted, touchable, filling the screen — with no YouTube
+    interface on it at all. The app draws its own.
+  */
+  var player = params.get('player') === '1' || controls;
 
   function tell(kind, detail) {
     try { parent.postMessage({ source: 'ferchichi-trailer', kind: kind, detail: detail || null }, '*'); }
@@ -75,7 +82,7 @@
     and have completely different causes, one being the network and the other
     being the phone's autoplay policy.
   */
-  if (controls) document.body.className = 'is-player';
+  if (player) document.body.className = 'is-player';
 
   tell('reached');
 
@@ -99,7 +106,7 @@
       video someone opened on purpose must not be cropped, so it takes the
       smaller of the two fits and letterboxes instead.
     */
-    var box = controls
+    var box = player
       ? (byWidth.h <= h ? byWidth : byHeight)
       : (byWidth.h >= h ? byWidth : byHeight);
     el.style.width = Math.ceil(box.w) + 'px';
@@ -117,6 +124,13 @@
       else if (data.kind === 'unmute') { player.unMute(); player.setVolume(100); }
       else if (data.kind === 'pause') player.pauseVideo();
       else if (data.kind === 'play') player.playVideo();
+      else if (data.kind === 'toggle') {
+        // The app has no way to read the player's state across the origin
+        // boundary, so the decision is made here where it can be.
+        var state = player.getPlayerState();
+        if (state === YT.PlayerState.PLAYING) player.pauseVideo();
+        else player.playVideo();
+      }
     } catch (err) { /* the player is gone; the app will notice on its own */ }
   });
 
@@ -139,8 +153,8 @@
         rel: 0,
         iv_load_policy: 3,
         // A backdrop loops; a trailer someone opened should end when it ends.
-        loop: controls ? 0 : 1,
-        playlist: controls ? undefined : id,
+        loop: player ? 0 : 1,
+        playlist: player ? undefined : id,
         origin: location.origin
       },
       events: {
@@ -170,6 +184,8 @@
               try { player.mute(); player.playVideo(); } catch (err) {}
             }, 350);
           }
+          if (e.data === YT.PlayerState.PLAYING) tell('resumed');
+          if (e.data === YT.PlayerState.PAUSED && started) tell('paused');
           if (e.data === YT.PlayerState.ENDED) tell('ended');
         },
         onError: function (e) { tell('failed', 'youtube ' + e.data); }
